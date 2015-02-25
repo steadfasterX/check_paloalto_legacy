@@ -8,8 +8,8 @@ __author__ = 'Ralph Offinger, Thomas Fischer'
 # Check Palo Alto
 #
 # Purpose:		    Check Palo Alto Firewall systems. Tested in PA-500 v6.0.1
-#                   It is based on the PA REST API and the Nagios Plugin library 1.22.
-#                   (https://pypi.python.org/pypi/nagiosplugin/)
+# It is based on the PA REST API and the Nagios Plugin library 1.22.
+# (https://pypi.python.org/pypi/nagiosplugin/)
 #
 #
 # Last modified: 	2015-02-25 by Ralph Offinger
@@ -19,12 +19,14 @@ __author__ = 'Ralph Offinger, Thomas Fischer'
 
 import argparse
 import logging
-import nagiosplugin
 import urllib.request
 import time
 import sys
 import re
 from xml.etree import ElementTree as ET
+
+import nagiosplugin
+
 
 _log = logging.getLogger('nagiosplugin')
 
@@ -47,7 +49,6 @@ _log = logging.getLogger('nagiosplugin')
 # data acquisition
 
 class DiskSpace(nagiosplugin.Resource):
-
     def __init__(self, host, token):
         self.host = host
         self.token = token
@@ -71,7 +72,7 @@ class DiskSpace(nagiosplugin.Resource):
         disks = re.findall('sda\d.*', item)
 
         for disk in disks:
-            percent = int(re.findall('([0-9]+%)', disk)[0].replace("%",""))
+            percent = int(re.findall('([0-9]+%)', disk)[0].replace("%", ""))
             sda = re.findall('(sda\d)', disk)[0]
             yield nagiosplugin.Metric(sda, percent, min=0, max=100,
                                       context='diskspace')
@@ -84,10 +85,10 @@ class DiskSpaceSummary(nagiosplugin.Summary):
         return 'Used Diskspace is %s' % (', '.join(
             str(results[r].metric) + '%' for r in ['sda2', 'sda5', 'sda6', 'sda8']))
 
+
 # data acquisition
 
 class SessInfo(nagiosplugin.Resource):
-
     def __init__(self, host, token):
         self.host = host
         self.token = token
@@ -122,16 +123,13 @@ class SessInfo(nagiosplugin.Resource):
 # data presentation
 
 class SessSummary(nagiosplugin.Summary):
-
     def ok(self, results):
-        return 'Max possible sessions: ' + str(results['maxsess'].metric) + ' / Active sessions: ' + str(results[
-            'actsess'].metric) + ' / Throughput in kbps: ' + str(results['throughput'].metric)
-
+        return 'Max possible sessions: ' + str(results['maxsess'].metric) + ' / Active sessions: ' +\
+               str(results['actsess'].metric) + ' / Throughput in kbps: ' + str(results['throughput'].metric)
 
 # data acquisition
 
 class Load(nagiosplugin.Resource):
-
     def __init__(self, host, token):
         self.host = host
         self.token = token
@@ -164,16 +162,16 @@ class Load(nagiosplugin.Resource):
 # data presentation
 
 class LoadSummary(nagiosplugin.Summary):
-
-     def ok(self, results):
+    def ok(self, results):
         return 'loadavg is %s' % (', '.join(
             str(results[r].metric) for r in ['CPU0', 'CPU1', 'CPU2', 'CPU3']))
 
 
-class Throughput(nagiosplugin.Resource):
+# data acquisition
 
-    #statefile = '/usr/lib/nagios/plugins/checkpa/throughput'
-    statefile = 'throughput'
+class Throughput(nagiosplugin.Resource):
+    statefile = '/usr/lib/nagios/plugins/checkpa/throughput'
+    #statefile = 'throughput'
 
     def __init__(self, host, token, interface, prefix):
         self.host = host
@@ -191,7 +189,8 @@ class Throughput(nagiosplugin.Resource):
         id = self.prefix + str(self.interface)
         currentTime = time.time()
         if self.prefix == 'eth':
-            cmdThroughput = '<show><counter><interface>ethernet1/' + str(self.interface) + '</interface></counter></show>'
+            cmdThroughput = '<show><counter><interface>ethernet1/' + str(
+                self.interface) + '</interface></counter></show>'
         elif self.prefix == 'tun':
             cmdThroughput = '<show><counter><interface>tunnel.' + str(self.interface) + '</interface></counter></show>'
         else:
@@ -231,8 +230,9 @@ class Throughput(nagiosplugin.Resource):
                 nagiosplugin.Metric('outBytes', diffoutbytes, 'B', min=0)]
 
 
-class NetworkSummary(nagiosplugin.Summary):
+# data presentation
 
+class NetworkSummary(nagiosplugin.Summary):
     def ok(self, results):
         kiBIn = round(results['inBytes'].metric.value / 1000, 2)
         kiBOut = round(results['outBytes'].metric.value / 1000, 2)
