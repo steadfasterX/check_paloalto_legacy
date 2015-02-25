@@ -15,4 +15,3 @@ Every contribution is welcome.
 ### Licence
 
 CC BY-ND 3.0 (http://creativecommons.org/licenses/by-nd/3.0/)
-Share — copy and redistribute the material in any medium or format for any purpose, even commercially.
