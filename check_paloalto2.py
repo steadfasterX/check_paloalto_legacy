@@ -85,7 +85,6 @@ class DiskSpaceSummary(nagiosplugin.Summary):
         return 'Used Diskspace is %s' % (', '.join(
             str(results[r].metric) + '%' for r in ['sda2', 'sda5', 'sda6', 'sda8']))
 
-
 # data acquisition
 
 class SessInfo(nagiosplugin.Resource):
@@ -299,6 +298,7 @@ def main():
                 NetworkSummary())
     else:
         argp.print_help()
+        sys.exit(0)
     check.main(verbose=args.verbose)
 
 
