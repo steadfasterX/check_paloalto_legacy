@@ -202,28 +202,32 @@ class Throughput(nagiosplugin.Resource):
         with urllib.request.urlopen(requestURL) as url:
             root = ET.parse(url).getroot()
 
-        iBytesNew = 0
-        oBytesNew = 0
-
         for item in root.findall('.//entry'):
-            iBytesNew = item.find('ibytes').text
-            oBytesNew = item.find('obytes').text
+            ibytesnew = item.find('ibytes').text
+            obytesnew = item.find('obytes').text
+
 
         with nagiosplugin.Cookie(self.statefile) as cookie:
-            oldInBytes = cookie.get(id + 'i', iBytesNew)
-            oldOutBytes = cookie.get(id + 'o', oBytesNew)
-            oldTime = cookie.get(id + 't', currentTime)
-            cookie[id + 'i'] = iBytesNew
-            cookie[id + 'o'] = oBytesNew
+            oldinbytes = cookie.get(id + 'i', ibytesnew)
+            oldoutbytes = cookie.get(id + 'o', obytesnew)
+            oldtime = cookie.get(id + 't', currentTime)
+            # simple error handling
+            if float(ibytesnew) < float(oldinbytes) or not ibytesnew:
+                print('Couldn\'t get a valid input value!')
+                sys.exit(3)
+            if float(obytesnew) < float(oldoutbytes) or not obytesnew:
+                print('Couldn\'t get a valid output value!')
+                sys.exit(3)
+            cookie[id + 'i'] = ibytesnew
+            cookie[id + 'o'] = obytesnew
             cookie[id + 't'] = currentTime
 
-        difftime = currentTime - oldTime
+        difftime = currentTime - oldtime
         if difftime > 0:
-            diffinbytes = round((float(iBytesNew) - float(oldInBytes)) / difftime, 2)
-            diffoutbytes = round((float(oBytesNew) - float(oldOutBytes)) / difftime, 2)
+            diffinbytes = round((float(ibytesnew) - float(oldinbytes)) / difftime, 2)
+            diffoutbytes = round((float(obytesnew) - float(oldoutbytes)) / difftime, 2)
         else:
-            diffinbytes = 0
-            diffoutbytes = 0
+            sys.exit(3)
 
         return [nagiosplugin.Metric('inBytes', diffinbytes, 'B', min=0),
                 nagiosplugin.Metric('outBytes', diffoutbytes, 'B', min=0)]
