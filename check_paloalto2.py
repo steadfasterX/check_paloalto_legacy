@@ -42,12 +42,6 @@ _log = logging.getLogger('nagiosplugin')
 # https://x.x.x.x/api/?type=keygen&user=YOUR-USERNAME&password=YOUR-PASSWORD
 # (replace YOUR-USERNAME with the username created in step 5) and YOUR-PASSWORD accordingly)
 
-#########################################################################################
-# no changes behind this point
-#########################################################################################
-
-# data acquisition
-
 class DiskSpace(nagiosplugin.Resource):
     def __init__(self, host, token):
         self.host = host
@@ -78,14 +72,11 @@ class DiskSpace(nagiosplugin.Resource):
                                       context='diskspace')
 
 
-# data presentation
-
 class DiskSpaceSummary(nagiosplugin.Summary):
     def ok(self, results):
         return 'Used Diskspace is %s' % (', '.join(
             str(results[r].metric) + '%' for r in ['sda2', 'sda5', 'sda6', 'sda8']))
 
-# data acquisition
 
 class SessInfo(nagiosplugin.Resource):
     def __init__(self, host, token):
@@ -119,14 +110,11 @@ class SessInfo(nagiosplugin.Resource):
                 nagiosplugin.Metric('throughput', throughput, 'B', min=0)]
 
 
-# data presentation
-
 class SessSummary(nagiosplugin.Summary):
     def ok(self, results):
-        return 'Max possible sessions: ' + str(results['maxsess'].metric) + ' / Active sessions: ' +\
+        return 'Max possible sessions: ' + str(results['maxsess'].metric) + ' / Active sessions: ' + \
                str(results['actsess'].metric) + ' / Throughput in kbps: ' + str(results['throughput'].metric)
 
-# data acquisition
 
 class Load(nagiosplugin.Resource):
     def __init__(self, host, token):
@@ -158,15 +146,11 @@ class Load(nagiosplugin.Resource):
                                       context='load')
 
 
-# data presentation
-
 class LoadSummary(nagiosplugin.Summary):
     def ok(self, results):
         return 'loadavg is %s' % (', '.join(
             str(results[r].metric) for r in ['CPU0', 'CPU1', 'CPU2', 'CPU3']))
 
-
-# data acquisition
 
 class Throughput(nagiosplugin.Resource):
     statefile = '/usr/lib/nagios/plugins/checkpa/throughput'
@@ -177,7 +161,6 @@ class Throughput(nagiosplugin.Resource):
         self.token = token
         self.interface = interface
         self.prefix = prefix
-
 
     def probe(self):
         """
@@ -203,43 +186,46 @@ class Throughput(nagiosplugin.Resource):
             root = ET.parse(url).getroot()
 
         for item in root.findall('.//entry'):
-            ibytesnew = item.find('ibytes').text
-            obytesnew = item.find('obytes').text
-
+            api_inbytes = item.find('ibytes').text
+            api_outbytes = item.find('obytes').text
 
         with nagiosplugin.Cookie(self.statefile) as cookie:
-            oldinbytes = cookie.get(id + 'i', ibytesnew)
-            oldoutbytes = cookie.get(id + 'o', obytesnew)
-            oldtime = cookie.get(id + 't', currentTime)
+            old_inbytes = cookie.get(id + 'i', api_inbytes)
+            old_outbytes = cookie.get(id + 'o', api_outbytes)
+            old_time = cookie.get(id + 't', currentTime)
+
             # simple error handling
-            if float(ibytesnew) < float(oldinbytes) or not ibytesnew:
+            if float(api_inbytes) < float(old_inbytes) or not api_inbytes:
                 print('Couldn\'t get a valid input value!')
                 sys.exit(3)
-            if float(obytesnew) < float(oldoutbytes) or not obytesnew:
+            if float(api_outbytes) < float(old_outbytes) or not api_outbytes:
                 print('Couldn\'t get a valid output value!')
                 sys.exit(3)
-            cookie[id + 'i'] = ibytesnew
-            cookie[id + 'o'] = obytesnew
+            cookie[id + 'i'] = api_inbytes
+            cookie[id + 'o'] = api_outbytes
             cookie[id + 't'] = currentTime
 
-        difftime = currentTime - oldtime
-        if difftime > 0:
-            diffinbytes = round((float(ibytesnew) - float(oldinbytes)) / difftime, 2)
-            diffoutbytes = round((float(obytesnew) - float(oldoutbytes)) / difftime, 2)
+        diff_time = float(currentTime) - float(old_time)
+        if diff_time > 0:
+            diff_inbit = round(((float(api_inbytes) - float(old_inbytes)) / diff_time) * 8, 2)
+            diff_outbit = round(((float(api_outbytes) - float(old_outbytes)) / diff_time) * 8, 2)
         else:
             sys.exit(3)
 
-        return [nagiosplugin.Metric('inBytes', diffinbytes, 'B', min=0),
-                nagiosplugin.Metric('outBytes', diffoutbytes, 'B', min=0)]
+        return [nagiosplugin.Metric('inBytes' + str(self.interface), diff_inbit, 'b', min=0),
+                nagiosplugin.Metric('outBytes' + str(self.interface), diff_outbit, 'b', min=0)]
 
-
-# data presentation
 
 class NetworkSummary(nagiosplugin.Summary):
     def ok(self, results):
-        kiBIn = round(results['inBytes'].metric.value / 1000, 2)
-        kiBOut = round(results['outBytes'].metric.value / 1000, 2)
-        return 'Input is %s' % str(kiBIn) + 'kbps - Output is %s' % str(kiBOut) + 'kbps'
+        kiBIn, kiBOut = 0, 0
+        for result in results:
+            if not str(result).find("inBytes"):
+                kiBIn += result.metric.value
+            else:
+                kiBOut += result.metric.value
+        return 'Input is %s' % str(round(kiBIn / 1000 / 1000, 2)) + ' Mb/s - ' \
+                'Output is %s' % str(round(kiBOut / 1000 / 1000, 2)) + ' Mb/s'
 
 
 # runtime environment and data evaluation
@@ -261,6 +247,8 @@ def main():
                       help='PaloAlto Check-Command. Available Commands: '
                            'CPU, DiskSpace, SessInfo, EthThroughput, VPNThroughput')
     argp.add_argument('-I', '--interface', type=int, nargs='?',
+                      help='PaloAlto specific interface for EthThroughput and VPNThroughput.')
+    argp.add_argument('-Is', '--interfaces', nargs='?',
                       help='PaloAlto specific interface for EthThroughput and VPNThroughput.')
     args = argp.parse_args()
     if args.check == 'CPU':
@@ -287,8 +275,8 @@ def main():
         else:
             check = nagiosplugin.Check(
                 Throughput(args.host, args.token, args.interface, 'eth'),
-                nagiosplugin.ScalarContext('inBytes', args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes', args.warning, args.critical),
+                nagiosplugin.ScalarContext('inBytes' + str(args.interface), args.warning, args.critical),
+                nagiosplugin.ScalarContext('outBytes' + str(args.interface), args.warning, args.critical),
                 NetworkSummary())
     elif args.check == 'VPNThroughput':
         if not args.interface:
@@ -297,8 +285,27 @@ def main():
         else:
             check = nagiosplugin.Check(
                 Throughput(args.host, args.token, args.interface, 'tun'),
-                nagiosplugin.ScalarContext('inBytes', args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes', args.warning, args.critical),
+                nagiosplugin.ScalarContext('inBytes' + str(args.interface), args.warning, args.critical),
+                nagiosplugin.ScalarContext('outBytes' + str(args.interface), args.warning, args.critical),
+                NetworkSummary())
+    # Some specific configuration programming
+    elif args.check == 'VPNThroughput2':
+        if not args.interfaces:
+            argp.print_help()
+            sys.exit(0)
+        else:
+            interfaces = str(args.interfaces).split(",")
+            interfaceObj = []
+            for interface in interfaces:
+                interfaceObj.append(Throughput(args.host, args.token, interface, 'tun'))
+            check = nagiosplugin.Check(
+                interfaceObj[0], interfaceObj[1], interfaceObj[2],
+                nagiosplugin.ScalarContext('inBytes6', args.warning, args.critical),
+                nagiosplugin.ScalarContext('inBytes7', args.warning, args.critical),
+                nagiosplugin.ScalarContext('inBytes8', args.warning, args.critical),
+                nagiosplugin.ScalarContext('outBytes6', args.warning, args.critical),
+                nagiosplugin.ScalarContext('outBytes7', args.warning, args.critical),
+                nagiosplugin.ScalarContext('outBytes8', args.warning, args.critical),
                 NetworkSummary())
     else:
         argp.print_help()
