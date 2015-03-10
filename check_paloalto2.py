@@ -7,13 +7,13 @@ __author__ = 'Ralph Offinger, Thomas Fischer'
 #
 # Check Palo Alto
 #
-# Purpose:		    Check Palo Alto Firewall systems. Tested in PA-500 v6.0.1
+# Purpose: Check Palo Alto Firewall systems. Tested in PA-500 v6.0.1
 # It is based on the PA REST API and the Nagios Plugin library 1.22.
 # (https://pypi.python.org/pypi/nagiosplugin/)
 #
 #
-# Last modified: 	2015-02-25 by Ralph Offinger
-# License:		    CC BY-ND 3.0 (http://creativecommons.org/licenses/by-nd/3.0/)
+# Last modified: 2015-03-10 by Ralph Offinger
+# License: CC BY-ND 3.0 (http://creativecommons.org/licenses/by-nd/3.0/)
 #
 #######################################################################################
 
@@ -77,6 +77,54 @@ class DiskSpaceSummary(nagiosplugin.Summary):
         return 'Used Diskspace is %s' % (', '.join(
             str(results[r].metric) + '%' for r in ['sda2', 'sda5', 'sda6', 'sda8']))
 
+
+class Environmental(nagiosplugin.Resource):
+    def __init__(self, host, token):
+        self.host = host
+        self.token = token
+
+    def probe(self):
+        """
+        Meaning:    Will fetch the PA environmentals from the REST API
+        Args:       Palo Alto as hostname or FQDN (required)
+        """
+        _log.info('reading load from REST-API')
+
+        cmdEnvironmental = '<show><system><environmentals></environmentals></system></show>'
+        requestURL = 'https://' + self.host + '/api/?key=' + self.token \
+                     + '&type=op&cmd=' \
+                     + cmdEnvironmental
+        with urllib.request.urlopen(requestURL) as url:
+            root = ET.parse(url).getroot()
+
+        items = root.find('result')
+
+        for item in items:
+            items2 = item.findall('.//entry')
+            for item2 in items2:
+                    alarm = item2.find('alarm').text
+                    if alarm == 'True':
+                        return [nagiosplugin.Metric(item.tag, True, context='alarm')]
+        return [nagiosplugin.Metric(item.tag, False, context='alarm')]
+
+
+class EnvironmentalContext(nagiosplugin.Context):
+    def __init__(self, name, warning=None, critical=None, fmt_metric=None,
+                 result_cls=nagiosplugin.result.Result):
+
+        super(EnvironmentalContext, self).__init__(name, fmt_metric, result_cls)
+
+    def evaluate(self, metric, resource):
+        if metric.value is None:
+            return self.result_cls(nagiosplugin.state.Unknown, None, metric)
+        if metric.value:
+            return self.result_cls(nagiosplugin.state.Critical, None, metric)
+        else:
+            return self.result_cls(nagiosplugin.state.Ok, None, metric)
+
+class EnvironmentalSummary(nagiosplugin.Summary):
+    def problem(self, results):
+        return 'Alarm found: %s' % str(results[0].metric.name)
 
 class SessInfo(nagiosplugin.Resource):
     def __init__(self, host, token):
@@ -245,11 +293,11 @@ def main():
                       help='PaloAlto Host')
     argp.add_argument('-C', '--check', default='',
                       help='PaloAlto Check-Command. Available Commands: '
-                           'CPU, DiskSpace, SessInfo, EthThroughput, VPNThroughput')
+                           'CPU, DiskSpace, SessInfo, EthThroughput, VPNThroughput, VPNThroughput2')
     argp.add_argument('-I', '--interface', type=int, nargs='?',
                       help='PaloAlto specific interface for EthThroughput and VPNThroughput.')
     argp.add_argument('-Is', '--interfaces', nargs='?',
-                      help='PaloAlto specific interface for EthThroughput and VPNThroughput.')
+                      help='PaloAlto specific interfaces for VPNThroughput2 (e. g. 2,3,4)')
     args = argp.parse_args()
     if args.check == 'CPU':
         check = nagiosplugin.Check(
@@ -261,6 +309,11 @@ def main():
             DiskSpace(args.host, args.token),
             nagiosplugin.ScalarContext('diskspace', args.warning, args.critical),
             DiskSpaceSummary())
+    elif args.check == 'Environmental':
+        check = nagiosplugin.Check(
+            Environmental(args.host, args.token),
+            EnvironmentalContext('alarm'),
+            EnvironmentalSummary())
     elif args.check == 'SessInfo':
         check = nagiosplugin.Check(
             SessInfo(args.host, args.token),
