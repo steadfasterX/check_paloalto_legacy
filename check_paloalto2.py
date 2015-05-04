@@ -131,6 +131,43 @@ class EnvironmentalSummary(nagiosplugin.Summary):
         return 'Alarm found: %s' % str(results[0].metric.name)
 
 
+class Thermal(nagiosplugin.Resource):
+    def __init__(self, host, token):
+        self.host = host
+        self.token = token
+
+    def probe(self):
+        """
+        Meaning:    Will fetch the PA environmentals from the REST API
+        Args:       Palo Alto as hostname or FQDN (required)
+        """
+        _log.info('reading thermal status from REST-API')
+
+        cmd = '<show><system><environmentals><thermal></thermal></environmentals></system></show>'
+        requestURL = 'https://' + self.host + '/api/?key=' + self.token \
+                     + '&type=op&cmd=' \
+                     + cmd
+        with urllib.request.urlopen(requestURL) as url:
+            root = ET.parse(url).getroot()
+
+        items = root.find('result')
+        for item in items:
+            items2 = item.findall('.//entry')
+            for item2 in items2:
+                temperature = item2.find('DegreesC').text
+                maxt = item2.find('max').text
+                desc = item2.find('description').text
+                yield nagiosplugin.Metric(desc, float(temperature), min=0, max=float(maxt), context='temperature')
+
+class ThermalSummary(nagiosplugin.Summary):
+    def ok(self, results):
+        text = ""
+        for result in results:
+            text += (str(result.metric) + ' Degrees, ')
+        text = text[:-2]
+        return text
+
+
 class SessInfo(nagiosplugin.Resource):
     def __init__(self, host, token):
         self.host = host
@@ -300,7 +337,7 @@ def main():
                       help='PaloAlto Host')
     argp.add_argument('-C', '--check', default='',
                       help='PaloAlto Check-Command. Available commands: '
-                           'CPU, DiskSpace, SessInfo, Throughput, Environmental')
+                           'CPU, DiskSpace, SessInfo, Throughput, Environmental, Temperature')
     argp.add_argument('-I', '--interface', nargs='?',
                       help='PaloAlto specific interface for Throughput.')
     argp.add_argument('-it', '--interfacetype', nargs='?',
@@ -322,6 +359,11 @@ def main():
             Environmental(args.host, args.token),
             EnvironmentalContext('alarm'),
             EnvironmentalSummary())
+    elif args.check == 'Temperature':
+        check = nagiosplugin.Check(
+            Thermal(args.host, args.token),
+            nagiosplugin.ScalarContext('temperature', args.warning, args.critical),
+            ThermalSummary())
     elif args.check == 'SessInfo':
         check = nagiosplugin.Check(
             SessInfo(args.host, args.token),
