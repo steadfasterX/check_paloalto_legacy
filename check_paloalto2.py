@@ -17,6 +17,20 @@ __author__ = 'Ralph Offinger, Thomas Fischer'
 #
 #######################################################################################
 
+# The REST API requires a token to get information. This token must be generated once.
+# 1) Create a "monitoring role" in the PA.
+# 2) Disable everything in the WEB UI tab within that role
+# 3) Enable "Operational requests" in the XML API tab and disable everything else
+# 4) Ensure that the tab "Command line" is "None"
+# 5) Create a new Admin user who uses that custom role and for best practices choose
+# at least 20 length password without special characters other than '_-'
+# 6) Generating the token is easy. To do that login to your PA with the monitoring user
+# and open:
+# https://x.x.x.x/api/?type=keygen&user=YOUR-USERNAME&password=YOUR-PASSWORD
+# (replace YOUR-USERNAME with the username created in step 5) and YOUR-PASSWORD accordingly)
+#
+# On PA-Update or reset please delete the throughput file in /usr/lib/nagios/plugins/checkpa/
+
 import argparse
 import logging
 import urllib.request
@@ -30,17 +44,6 @@ import nagiosplugin
 
 _log = logging.getLogger('nagiosplugin')
 
-# The REST API requires a token to get information. This token must be generated once.
-# 1) Create a "monitoring role" in the PA.
-# 2) Disable everything in the WEB UI tab within that role
-# 3) Enable "Operational requests" in the XML API tab and disable everything else
-# 4) Ensure that the tab "Command line" is "None"
-# 5) Create a new Admin user who uses that custom role and for best practices choose
-# at least 20 length password without special characters other than '_-'
-# 6) Generating the token is easy. To do that login to your PA with the monitoring user
-# and open:
-# https://x.x.x.x/api/?type=keygen&user=YOUR-USERNAME&password=YOUR-PASSWORD
-# (replace YOUR-USERNAME with the username created in step 5) and YOUR-PASSWORD accordingly)
 
 class DiskSpace(nagiosplugin.Resource):
     def __init__(self, host, token):
@@ -52,7 +55,7 @@ class DiskSpace(nagiosplugin.Resource):
         Meaning:    Will fetch the PA Diskspace from the REST API
         Args:       Palo Alto as hostname or FQDN (required)
         """
-        _log.info('reading load from REST-API')
+        _log.info('reading disk space from REST-API')
 
         cmdDiskSpace = '<show><system><disk-space><%2Fdisk-space><%2Fsystem><%2Fshow>'
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
@@ -75,7 +78,7 @@ class DiskSpace(nagiosplugin.Resource):
 class DiskSpaceSummary(nagiosplugin.Summary):
     def ok(self, results):
         return 'Used Diskspace is %s' % (', '.join(
-            str(results[r].metric) + '%' for r in ['sda2', 'sda5', 'sda6', 'sda8']))
+            str(results[r].metric) + '%' for r in ['sda3', 'sda5', 'sda6', 'sda8']))
 
 
 class Environmental(nagiosplugin.Resource):
@@ -88,7 +91,7 @@ class Environmental(nagiosplugin.Resource):
         Meaning:    Will fetch the PA environmentals from the REST API
         Args:       Palo Alto as hostname or FQDN (required)
         """
-        _log.info('reading load from REST-API')
+        _log.info('reading environmental status from REST-API')
 
         cmdEnvironmental = '<show><system><environmentals></environmentals></system></show>'
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
@@ -102,9 +105,9 @@ class Environmental(nagiosplugin.Resource):
         for item in items:
             items2 = item.findall('.//entry')
             for item2 in items2:
-                    alarm = item2.find('alarm').text
-                    if alarm == 'True':
-                        return [nagiosplugin.Metric(item.tag, True, context='alarm')]
+                alarm = item2.find('alarm').text
+                if alarm == 'True':
+                    return [nagiosplugin.Metric(item.tag, True, context='alarm')]
         return [nagiosplugin.Metric(item.tag, False, context='alarm')]
 
 
@@ -122,9 +125,11 @@ class EnvironmentalContext(nagiosplugin.Context):
         else:
             return self.result_cls(nagiosplugin.state.Ok, None, metric)
 
+
 class EnvironmentalSummary(nagiosplugin.Summary):
     def problem(self, results):
         return 'Alarm found: %s' % str(results[0].metric.name)
+
 
 class SessInfo(nagiosplugin.Resource):
     def __init__(self, host, token):
@@ -137,7 +142,7 @@ class SessInfo(nagiosplugin.Resource):
                     from the REST API
         Args:       Palo Alto as hostname or FQDN (required)
         """
-        _log.info('reading load from REST-API')
+        _log.info('reading session info from REST-API')
 
         cmdSession = '%3Cshow%3E%3Csession%3E%3Cinfo%3E%3C%2Finfo%3E%3C%2Fsession%3E%3C%2Fshow%3E'
 
@@ -202,7 +207,7 @@ class LoadSummary(nagiosplugin.Summary):
 
 class Throughput(nagiosplugin.Resource):
     statefile = '/usr/lib/nagios/plugins/checkpa/throughput'
-    #statefile = 'throughput'
+    # statefile = 'throughput'
 
     def __init__(self, host, token, interface, prefix):
         self.host = host
@@ -215,6 +220,7 @@ class Throughput(nagiosplugin.Resource):
         Meaning:    Will fetch the throughput of the VPN Tunnels or the ethernet connections from the REST-API.
         Args:       Palo Alto as hostname or FQDN (required), specific interface and the prefix.
         """
+        _log.info('reading throughput from REST-API')
 
         id = self.prefix + str(self.interface)
         currentTime = time.time()
@@ -273,7 +279,8 @@ class NetworkSummary(nagiosplugin.Summary):
             else:
                 kiBOut += result.metric.value
         return 'Input is %s' % str(round(kiBIn / 1000 / 1000, 2)) + ' Mb/s - ' \
-                'Output is %s' % str(round(kiBOut / 1000 / 1000, 2)) + ' Mb/s'
+                                                                    'Output is %s' % str(
+            round(kiBOut / 1000 / 1000, 2)) + ' Mb/s'
 
 
 # runtime environment and data evaluation
@@ -292,12 +299,13 @@ def main():
     argp.add_argument('-H', '--host', default='',
                       help='PaloAlto Host')
     argp.add_argument('-C', '--check', default='',
-                      help='PaloAlto Check-Command. Available Commands: '
-                           'CPU, DiskSpace, SessInfo, EthThroughput, VPNThroughput, VPNThroughput2')
-    argp.add_argument('-I', '--interface', type=int, nargs='?',
-                      help='PaloAlto specific interface for EthThroughput and VPNThroughput.')
-    argp.add_argument('-Is', '--interfaces', nargs='?',
-                      help='PaloAlto specific interfaces for VPNThroughput2 (e. g. 2,3,4)')
+                      help='PaloAlto Check-Command. Available commands: '
+                           'CPU, DiskSpace, SessInfo, Throughput, Environmental')
+    argp.add_argument('-I', '--interface', nargs='?',
+                      help='PaloAlto specific interface for Throughput.')
+    argp.add_argument('-it', '--interfacetype', nargs='?',
+                      help='PaloAlto interface type. Available commands: '
+                           'eth, tun')
     args = argp.parse_args()
     if args.check == 'CPU':
         check = nagiosplugin.Check(
@@ -321,45 +329,23 @@ def main():
             nagiosplugin.ScalarContext('actsess', args.warning, args.critical),
             nagiosplugin.ScalarContext('throughput', args.warning, args.critical),
             SessSummary())
-    elif args.check == 'EthThroughput':
+    elif args.check == 'Throughput':
         if not args.interface:
             argp.print_help()
             sys.exit(0)
-        else:
-            check = nagiosplugin.Check(
-                Throughput(args.host, args.token, args.interface, 'eth'),
-                nagiosplugin.ScalarContext('inBytes' + str(args.interface), args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes' + str(args.interface), args.warning, args.critical),
-                NetworkSummary())
-    elif args.check == 'VPNThroughput':
-        if not args.interface:
+        if not args.interfacetype:
             argp.print_help()
             sys.exit(0)
         else:
-            check = nagiosplugin.Check(
-                Throughput(args.host, args.token, args.interface, 'tun'),
-                nagiosplugin.ScalarContext('inBytes' + str(args.interface), args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes' + str(args.interface), args.warning, args.critical),
-                NetworkSummary())
-    # Some specific configuration programming
-    elif args.check == 'VPNThroughput2':
-        if not args.interfaces:
-            argp.print_help()
-            sys.exit(0)
-        else:
-            interfaces = str(args.interfaces).split(",")
-            interfaceObj = []
+            interfaces = str(args.interface).split(",")
+            check = nagiosplugin.Check()
             for interface in interfaces:
-                interfaceObj.append(Throughput(args.host, args.token, interface, 'tun'))
-            check = nagiosplugin.Check(
-                interfaceObj[0], interfaceObj[1], interfaceObj[2],
-                nagiosplugin.ScalarContext('inBytes6', args.warning, args.critical),
-                nagiosplugin.ScalarContext('inBytes7', args.warning, args.critical),
-                nagiosplugin.ScalarContext('inBytes8', args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes6', args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes7', args.warning, args.critical),
-                nagiosplugin.ScalarContext('outBytes8', args.warning, args.critical),
-                NetworkSummary())
+                check.add(Throughput(args.host, args.token, interface, str(args.interfacetype)))
+            for interface in interfaces:
+                check.add(nagiosplugin.ScalarContext('inBytes' + interface, args.warning, args.critical))
+            for interface in interfaces:
+                check.add(nagiosplugin.ScalarContext('outBytes' + interface, args.warning, args.critical))
+            check.add(NetworkSummary())
     else:
         argp.print_help()
         sys.exit(0)
