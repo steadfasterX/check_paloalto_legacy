@@ -37,7 +37,11 @@ import urllib.request
 import time
 import sys
 import re
+from datetime import datetime
 from xml.etree import ElementTree as ET
+
+from nagiosplugin.result import Result
+from nagiosplugin.state import Ok, Warn, Critical
 
 import nagiosplugin
 
@@ -206,6 +210,70 @@ class SessSummary(nagiosplugin.Summary):
                str(results['actsess'].metric) + ' / Throughput in kbps: ' + str(results['throughput'].metric)
 
 
+class Certificate(nagiosplugin.Resource):
+    def __init__(self, host, token, exclude, warning, critical):
+        self.host = host
+        self.token = token
+        self.exclude = str(exclude).split(",")
+        self.warning = int(warning)
+        self.critical = int(critical)
+
+
+    def probe(self):
+        """
+        Meaning:    Will fetch the maximum possible sessions, the number of current sessions and the throughput
+                    from the REST API
+        Args:       Palo Alto as hostname or FQDN (required)
+        """
+        _log.info('reading certificate information from REST-API')
+
+        cmd = '<show><config><running><xpath>shared/certificate</xpath></running></config></show>'
+
+        requestURL = 'https://' + self.host + '/api/?key=' + self.token \
+                     + '&type=op&cmd=' \
+                     + cmd
+
+        with urllib.request.urlopen(requestURL) as url:
+            root = ET.parse(url).getroot()
+
+        certificates = root.findall('.//entry')
+
+        for certificate in certificates:
+            noGMT = certificate.find('not-valid-after').text.replace("GMT", "").strip()
+            date_object = datetime.strptime(noGMT, '%b %d %H:%M:%S %Y')
+            difference = date_object - datetime.today()
+            try:
+                status = certificate.find('status').text
+            except AttributeError as e:
+                status = ""
+            if certificate.get('name') not in self.exclude:
+                if status != "revoked":
+                    if difference.days <= self.warning and difference.days >= self.critical:
+                        yield nagiosplugin.Metric(certificate.get('name'), difference.days, context='certificates')
+
+class CertificateContext(nagiosplugin.Context):
+    def __init__(self, name, warning=None, critical=None, fmt_metric='{name} is {valueunit}', result_cls=Result):
+        super(CertificateContext, self).__init__(name, fmt_metric, result_cls)
+        self.warning = int(warning)
+        self.critical = int(critical)
+
+    def evaluate(self, metric, resource):
+        if metric.value <= self.critical:
+            return self.result_cls(Critical, None, metric)
+        elif metric.value <= self.warning:
+            return self.result_cls(nagiosplugin.state.Warn, None, metric)
+        else:
+            return self.result_cls(nagiosplugin.state.Ok, None, metric)
+
+
+class CertificateSummary(nagiosplugin.Summary):
+    def problem(self, results):
+        list = []
+        for result in results:
+            list.append(str(result))
+        output = ", ".join(list)
+        return str(output)
+
 class Load(nagiosplugin.Resource):
     def __init__(self, host, token):
         self.host = host
@@ -333,6 +401,8 @@ def main():
                       help='increase output verbosity (use up to 3 times)')
     argp.add_argument('-T', '--token', default='',
                       help='Token for PaloAlto')
+    argp.add_argument('-E', '--exclude', default='',
+                      help='Exclude for Certificates, seperate by comma')
     argp.add_argument('-H', '--host', default='',
                       help='PaloAlto Host')
     argp.add_argument('-C', '--check', default='',
@@ -364,6 +434,11 @@ def main():
             Thermal(args.host, args.token),
             nagiosplugin.ScalarContext('temperature', args.warning, args.critical),
             ThermalSummary())
+    elif args.check == 'Certificates':
+        check = nagiosplugin.Check(
+            Certificate(args.host, args.token, args.exclude, args.warning, args.critical),
+            CertificateContext('certificates', args.warning, args.critical),
+            CertificateSummary())
     elif args.check == 'SessInfo':
         check = nagiosplugin.Check(
             SessInfo(args.host, args.token),
