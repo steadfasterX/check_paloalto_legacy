@@ -17,33 +17,20 @@ __author__ = 'Ralph Offinger, Thomas Fischer'
 #
 #######################################################################################
 
-# The REST API requires a token to get information. This token must be generated once.
-# 1) Create a "monitoring role" in the PA.
-# 2) Disable everything in the WEB UI tab within that role
-# 3) Enable "Operational requests" in the XML API tab and disable everything else
-# 4) Ensure that the tab "Command line" is "None"
-# 5) Create a new Admin user who uses that custom role and for best practices choose
-# at least 20 length password without special characters other than '_-'
-# 6) Generating the token is easy. To do that login to your PA with the monitoring user
-# and open:
-# https://x.x.x.x/api/?type=keygen&user=YOUR-USERNAME&password=YOUR-PASSWORD
-# (replace YOUR-USERNAME with the username created in step 5) and YOUR-PASSWORD accordingly)
-#
-# On PA-Update or reset please delete the throughput file in /usr/lib/nagios/plugins/checkpa/
-
 import argparse
 import logging
 import urllib.request
 import time
 import sys
 import re
+import tempfile
+import nagiosplugin
+import os
 from datetime import datetime
 from xml.etree import ElementTree as ET
 
 from nagiosplugin.result import Result
 from nagiosplugin.state import Ok, Warn, Critical
-
-import nagiosplugin
 
 
 _log = logging.getLogger('nagiosplugin')
@@ -61,10 +48,10 @@ class DiskSpace(nagiosplugin.Resource):
         """
         _log.info('reading disk space from REST-API')
 
-        cmdDiskSpace = '<show><system><disk-space><%2Fdisk-space><%2Fsystem><%2Fshow>'
+        cmd = '<show><system><disk-space><%2Fdisk-space><%2Fsystem><%2Fshow>'
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
                      + '&type=op&cmd=' \
-                     + cmdDiskSpace
+                     + cmd
         with urllib.request.urlopen(requestURL) as url:
             root = ET.parse(url).getroot()
 
@@ -97,10 +84,10 @@ class Environmental(nagiosplugin.Resource):
         """
         _log.info('reading environmental status from REST-API')
 
-        cmdEnvironmental = '<show><system><environmentals></environmentals></system></show>'
+        cmd = '<show><system><environmentals></environmentals></system></show>'
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
                      + '&type=op&cmd=' \
-                     + cmdEnvironmental
+                     + cmd
         with urllib.request.urlopen(requestURL) as url:
             root = ET.parse(url).getroot()
 
@@ -185,11 +172,11 @@ class SessInfo(nagiosplugin.Resource):
         """
         _log.info('reading session info from REST-API')
 
-        cmdSession = '%3Cshow%3E%3Csession%3E%3Cinfo%3E%3C%2Finfo%3E%3C%2Fsession%3E%3C%2Fshow%3E'
+        cmd = '%3Cshow%3E%3Csession%3E%3Cinfo%3E%3C%2Finfo%3E%3C%2Fsession%3E%3C%2Fshow%3E'
 
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
                      + '&type=op&cmd=' \
-                     + cmdSession
+                     + cmd
 
         with urllib.request.urlopen(requestURL) as url:
             root = ET.parse(url).getroot()
@@ -286,11 +273,11 @@ class Load(nagiosplugin.Resource):
         """
         _log.info('reading load from REST-API')
 
-        cmdCPU = '<show><running><resource-monitor><minute><last>1<%2Flast>' \
+        cmd = '<show><running><resource-monitor><minute><last>1<%2Flast>' \
                  '<%2Fminute><%2Fresource-monitor><%2Frunning><%2Fshow>'
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
                      + '&type=op&cmd=' \
-                     + cmdCPU
+                     + cmd
 
         with urllib.request.urlopen(requestURL) as url:
             root = ET.parse(url).getroot()
@@ -311,8 +298,7 @@ class LoadSummary(nagiosplugin.Summary):
 
 
 class Throughput(nagiosplugin.Resource):
-    statefile = '/usr/lib/nagios/plugins/checkpa/throughput'
-    # statefile = 'throughput'
+    statefile = os.path.join(tempfile.gettempdir(), 'throughput')
 
     def __init__(self, host, token, interface, prefix):
         self.host = host
@@ -330,16 +316,16 @@ class Throughput(nagiosplugin.Resource):
         id = self.prefix + str(self.interface)
         currentTime = time.time()
         if self.prefix == 'eth':
-            cmdThroughput = '<show><counter><interface>ethernet1/' + str(
+            cmd = '<show><counter><interface>ethernet1/' + str(
                 self.interface) + '</interface></counter></show>'
         elif self.prefix == 'tun':
-            cmdThroughput = '<show><counter><interface>tunnel.' + str(self.interface) + '</interface></counter></show>'
+            cmd = '<show><counter><interface>tunnel.' + str(self.interface) + '</interface></counter></show>'
         else:
             print('Unknown prefix!')
             sys.exit(3)
         requestURL = 'https://' + self.host + '/api/?key=' + self.token \
                      + '&type=op&cmd=' \
-                     + cmdThroughput
+                     + cmd
 
         with urllib.request.urlopen(requestURL) as url:
             root = ET.parse(url).getroot()
@@ -402,12 +388,12 @@ def main():
     argp.add_argument('-T', '--token', default='',
                       help='Token for PaloAlto')
     argp.add_argument('-E', '--exclude', default='',
-                      help='Exclude for Certificates, seperate by comma')
+                      help='Exclude certificates, separate certificate name by comma')
     argp.add_argument('-H', '--host', default='',
                       help='PaloAlto Host')
     argp.add_argument('-C', '--check', default='',
                       help='PaloAlto Check-Command. Available commands: '
-                           'CPU, DiskSpace, SessInfo, Throughput, Environmental, Temperature')
+                           'CPU, DiskSpace, SessInfo, Throughput, Environmental, Temperature, Certificates')
     argp.add_argument('-I', '--interface', nargs='?',
                       help='PaloAlto specific interface for Throughput.')
     argp.add_argument('-it', '--interfacetype', nargs='?',
