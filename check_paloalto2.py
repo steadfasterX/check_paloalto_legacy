@@ -7,11 +7,15 @@ __author__ = 'Ralph Offinger, Thomas Fischer'
 #
 # Check Palo Alto
 #
-# Purpose: Check Palo Alto Firewall systems. Tested in PA-500 v6.0.1
+# Purpose: Check Palo Alto Firewall systems. 
+# Tested on: 
+# - PA-500 v6.0.1 - v6.0.9
+# - PA-3050 v6.0.9
+#
 # It is based on the PA REST API and the Nagios Plugin library 1.22.
 # (https://pypi.python.org/pypi/nagiosplugin/)
 #
-# License: CC BY-ND 3.0 (http://creativecommons.org/licenses/by-nd/3.0/)
+# License: CC BY-SA 4.0 (http://creativecommons.org/licenses/by-sa/4.0/)
 #
 #######################################################################################
 
