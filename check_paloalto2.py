@@ -43,8 +43,7 @@ class DiskSpace(nagiosplugin.Resource):
 
     def probe(self):
         """
-        Meaning:    Will fetch the PA Diskspace from the REST API
-        Args:       Palo Alto as hostname or FQDN (required)
+        Meaning:    Will fetch the PA diskspace of all disks from the REST API.
         """
         _log.info('reading disk space from REST-API')
 
@@ -83,7 +82,6 @@ class Environmental(nagiosplugin.Resource):
     def probe(self):
         """
         Meaning:    Will fetch the PA environmentals from the REST API
-        Args:       Palo Alto as hostname or FQDN (required)
         """
         _log.info('reading environmental status from REST-API')
 
@@ -133,7 +131,6 @@ class Thermal(nagiosplugin.Resource):
     def probe(self):
         """
         Meaning:    Will fetch the PA environmentals from the REST API
-        Args:       Palo Alto as hostname or FQDN (required)
         """
         _log.info('reading thermal status from REST-API')
 
@@ -171,7 +168,6 @@ class SessInfo(nagiosplugin.Resource):
         """
         Meaning:    Will fetch the maximum possible sessions, the number of current sessions and the throughput
                     from the REST API
-        Args:       Palo Alto as hostname or FQDN (required)
         """
         _log.info('reading session info from REST-API')
 
@@ -211,9 +207,10 @@ class Certificate(nagiosplugin.Resource):
 
     def probe(self):
         """
-        Meaning:    Will fetch the maximum possible sessions, the number of current sessions and the throughput
-                    from the REST API
-        Args:       Palo Alto as hostname or FQDN (required)
+        Meaning:    Will fetch the certificates from the REST API and returns a warning if the remaining days of the
+                    certificate is between the value of warning (e. g. 20) and critical (e. g. 0).
+
+                    If a certificate has been revoked or excluded, no warning will appear.
         """
         _log.info('reading certificate information from REST-API')
 
@@ -252,15 +249,17 @@ class CertificateContext(nagiosplugin.Context):
             return self.result_cls(Critical, None, metric)
         elif metric.value <= self.warning:
             return self.result_cls(nagiosplugin.state.Warn, None, metric)
-        else:
+        elif metric.value >= self.warning:
             return self.result_cls(nagiosplugin.state.Ok, None, metric)
+        else:
+            return self.result_cls(nagiosplugin.state.Unknown, None, metric)
 
 
 class CertificateSummary(nagiosplugin.Summary):
     def problem(self, results):
         list = []
         for result in results:
-            list.append(str(result))
+            list.append(str(result) + ' days')
         output = ", ".join(list)
         return str(output)
 
@@ -272,7 +271,6 @@ class Load(nagiosplugin.Resource):
     def probe(self):
         """
         Meaning:    Will fetch the CPU Load from the REST API
-        Args:       Palo Alto as hostname or FQDN (required)
         """
         _log.info('reading load from REST-API')
 
@@ -311,8 +309,7 @@ class Throughput(nagiosplugin.Resource):
 
     def probe(self):
         """
-        Meaning:    Will fetch the throughput of the VPN Tunnels or the ethernet connections from the REST-API.
-        Args:       Palo Alto as hostname or FQDN (required), specific interface and the prefix.
+        Meaning:    Will fetch the throughput of the VPN tunnels or the ethernet connections from the REST-API.
         """
         _log.info('reading throughput from REST-API')
 
@@ -377,7 +374,6 @@ class NetworkSummary(nagiosplugin.Summary):
             round(kiBOut / 1000 / 1000, 2)) + ' Mb/s'
 
 
-# runtime environment and data evaluation
 
 @nagiosplugin.guarded
 def main():
