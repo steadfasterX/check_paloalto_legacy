@@ -68,8 +68,11 @@ class DiskSpace(nagiosplugin.Resource):
 
 class DiskSpaceSummary(nagiosplugin.Summary):
     def ok(self, results):
-        return 'Used Diskspace is %s' % (', '.join(
-            str(results[r].metric) + '%' for r in ['sda3', 'sda5', 'sda6', 'sda8']))
+        list = []
+        for result in results:
+            list.append(str(result) + '%')
+        output = ", ".join(list)
+        return str(output)
 
 
 class Environmental(nagiosplugin.Resource):
